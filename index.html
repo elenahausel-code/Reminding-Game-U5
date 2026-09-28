@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mental Buckets: Who Thought What?</title>
+<style>
+  :root {
+    /* IMD palette, matching the earlier FrED Trek activities */
+    --teal: #005DC4;       /* Lac Léman: main colour */
+    --teal-dark: #004a9e;
+    --navy: #001E62;       /* Midnight */
+    --ink: #12233B;
+    --paper: #ffffff;
+    --mist: #e8f1fc;
+    --good: #0E6347;       /* Moss */
+    --bad: #b8481a;
+    --accent: #FC6B27;     /* Sunburst */
+    box-sizing: border-box;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 12px; }
+
+  /* Stage keeps a fixed 1200 x 720 design and scales to fit the iframe */
+  .frame { position: relative; width: 100%; }
+  .stage {
+    position: absolute; top: 0; left: 0;
+    width: 1200px; height: 720px;
+    transform-origin: 0 0;
+    border: 2px solid var(--navy);
+    background: var(--paper);
+    overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+
+  /* Waiting room */
+  .waiting {
+    position: absolute; left: 0; top: 0; width: 300px; height: 100%;
+    border-right: 2px solid var(--navy);
+    padding: 14px 12px;
+  }
+  .waiting h2 { margin: 0 0 10px; font-size: 16px; font-weight: 600; color: var(--navy); }
+  .queue { display: flex; flex-direction: column; gap: 6px; }
+  .qblock {
+    width: 256px; min-height: 36px; padding: 5px 10px;
+    background: var(--teal); color: #fff; border: 2px solid var(--navy);
+    font-size: 15px; line-height: 1.25; display: flex; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .qblock:nth-child(3n+2) { margin-left: 10px; }
+  .qblock:nth-child(3n) { margin-left: 5px; }
+  .qblock.next { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+  /* Buckets */
+  .bucket { position: absolute; top: 410px; width: 190px; height: 230px; }
+  .bucket svg { position: absolute; inset: 0; overflow: visible; }
+  .bucket .label {
+    position: absolute; top: 238px; left: -20px; width: 230px;
+    text-align: center; font-size: 19px; line-height: 1.2; color: var(--ink);
+  }
+  .bucket.flash-good svg path { stroke: var(--good); }
+  .bucket.flash-bad svg path { stroke: var(--bad); }
+
+  /* Blocks in the play area */
+  .block {
+    position: absolute; width: 178px; height: 70px; padding: 3px 4px;
+    background: var(--teal); color: #fff; border: 2px solid var(--navy);
+    font-size: 16px; line-height: 1.15; text-align: center;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .block.active { box-shadow: 0 0 0 3px var(--accent); z-index: 5; }
+  .block.anim { transition: left .45s ease, top .45s ease, opacity .45s ease, transform .45s ease; }
+  .block.placed { background: var(--teal-dark); }
+  .block.shake { animation: shake .3s linear; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+
+  /* Heads-up display */
+  .hud { position: absolute; top: 14px; right: 18px; text-align: right; font-size: 15px; color: var(--navy); }
+  .hud strong { font-size: 22px; }
+  .feedback {
+    position: absolute; top: 60px; left: 320px; width: 860px; text-align: center;
+    font-size: 20px; font-weight: 600; min-height: 28px;
+  }
+  .feedback.good { color: var(--good); }
+  .feedback.bad { color: var(--bad); }
+
+  /* Overlays */
+  .overlay {
+    position: absolute; inset: 0; background: rgba(255,255,255,.94);
+    display: flex; align-items: center; justify-content: center; z-index: 20;
+  }
+  .card { max-width: 640px; padding: 30px 36px; border: 2px solid var(--navy); background: #fff; }
+  .card h1 { margin: 0 0 12px; font-size: 30px; color: var(--navy); }
+  .card p { font-size: 18px; line-height: 1.45; margin: 0 0 12px; }
+  .card ul { font-size: 17px; line-height: 1.5; margin: 0 0 18px; padding-left: 22px; }
+  .card .stats { font-size: 18px; margin-bottom: 18px; }
+  .btn {
+    font: inherit; font-size: 18px; font-weight: 600; padding: 10px 22px; cursor: pointer;
+    background: var(--teal); color: #fff; border: 2px solid var(--navy);
+  }
+  .btn:hover { background: var(--teal-dark); }
+  .btn:focus-visible, .ctl:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .hidden { display: none; }
+
+  /* Controls under the stage */
+  .controls { display: flex; justify-content: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .ctl {
+    font: inherit; font-size: 16px; min-width: 64px; padding: 10px 16px; cursor: pointer;
+    background: var(--mist); color: var(--navy); border: 2px solid var(--navy);
+    touch-action: manipulation;
+  }
+  .ctl:active { background: #d6e5ec; }
+  .keys { text-align: center; font-size: 14px; color: #4a5a64; margin-top: 6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .block.anim { transition-duration: .01s; }
+    .block.shake { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="frame" id="frame">
+    <div class="stage" id="stage">
+      <aside class="waiting" aria-label="Ideas waiting room">
+        <h2>Ideas waiting room</h2>
+        <div class="queue" id="queue"></div>
+      </aside>
+
+      <div class="hud" aria-live="polite">
+        Sorted <strong id="sorted">0</strong> / <span id="total">12</span>
+      </div>
+      <div class="feedback" id="feedback" role="status" aria-live="polite"></div>
+
+      <div id="buckets"></div>
+
+      <div class="overlay" id="intro">
+        <div class="card">
+          <h1>Who thought what?</h1>
+          <p>Before both stories come back for the third FrED step, <em>Decide</em>, let's refresh your memory. Each falling block holds an idea from one character's mind. Guide it into the right mental bucket.</p>
+          <ul>
+            <li>Move the block with the ← → arrow keys or the buttons below.</li>
+            <li>Press ↓ to speed it up, or Space to drop it straight down.</li>
+            <li>The right bucket keeps the idea. The wrong one sends it back to the waiting room.</li>
+            <li>The blocks fall faster as you go.</li>
+          </ul>
+          <button class="btn" id="startBtn">Start sorting</button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="pauseOv">
+        <div class="card">
+          <h1>Paused</h1>
+          <button class="btn" id="resumeBtn">Resume</button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="doneOv">
+        <div class="card">
+          <h1>Every idea is back in its bucket</h1>
+          <p class="stats" id="stats"></p>
+          <p>Keep these four minds in view. Robert, Jenny, the captains and the robot NEAL-7 will return, and their stories will show you more about the Decide step.</p>
+          <button class="btn" id="againBtn">Play again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls" aria-label="Game controls">
+    <button class="ctl" id="leftBtn" aria-label="Move left">◀ Left</button>
+    <button class="ctl" id="downBtn" aria-label="Move down faster">▼ Faster</button>
+    <button class="ctl" id="dropBtn" aria-label="Drop now">⤓ Drop</button>
+    <button class="ctl" id="rightBtn" aria-label="Move right">Right ▶</button>
+    <button class="ctl" id="pauseBtn">Pause</button>
+  </div>
+  <div class="keys">Keyboard: ← → move · ↓ faster · Space drop · P pause</div>
+</div>
+
+<script>
+(function () {
+  // ---------- Content ----------
+  const BUCKETS = [
+    { id: "robert",   label: "Robert",                          name: "Robert's" },
+    { id: "captains", label: "Captain Arna &<br>Captain Alberte", name: "the captains'" },
+    { id: "neal",     label: "NEAL-7 The<br>Robot",               name: "NEAL-7's" },
+    { id: "jenny",    label: "Jenny",                            name: "Jenny's" }
+  ];
+  const IDEAS = [
+    { t: "Wanted to meet Jenny", b: "robert" },
+    { t: "Believes critical thinking is critical", b: "robert" },
+    { t: "Doubts both his dragon and his treasure", b: "robert" },
+    { t: "Two plans could save the scientists", b: "captains" },
+    { t: "Choosing between speed and safety", b: "captains" },
+    { t: "The Deep Listening Array is too slow", b: "captains" },
+    { t: "Has no opinions officially", b: "neal" },
+    { t: "Knows that divergent thinking requires no criticism", b: "neal" },
+    { t: "No idea should be lost in the dark", b: "neal" },
+    { t: "Puzzled how to get 8,000 to pay the hospital", b: "jenny" },
+    { t: "Her camera is still useless, but who cares", b: "jenny" },
+    { t: "\u201CPlease don't tell anyone about this\u201D", b: "jenny" }
+  ];
+
+  // ---------- Geometry (stage units) ----------
+  const STAGE_W = 1200, STAGE_H = 720;
+  const BUCKET_X = [310, 540, 770, 1000], BUCKET_W = 190, RIM_Y = 410;
+  const BLOCK_W = 178, BLOCK_H = 70;
+  const X0 = 316, STEP_X = 23, MAX_K = 30;  // columns: 316 + k*23, aligned to each bucket every 10 steps
+  const STEP_Y = 20, SPAWN_Y = 90;
+  const SLOT_Y = [563, 489, 415];           // bottom, middle, top inside a bucket
+  const WAIT_X = 30, WAIT_Y = 60;           // where bounced blocks fly back to
+
+  // ---------- Elements ----------
+  const $ = id => document.getElementById(id);
+  const stage = $("stage"), frame = $("frame"), queueEl = $("queue"), feedbackEl = $("feedback");
+  $("total").textContent = IDEAS.length;
+
+  // Draw buckets
+  const bucketEls = BUCKETS.map((b, i) => {
+    const el = document.createElement("div");
+    el.className = "bucket";
+    el.style.left = BUCKET_X[i] + "px";
+    el.innerHTML =
+      '<svg viewBox="0 0 190 230" width="190" height="230" aria-hidden="true">' +
+      '<path d="M2 0 C2 180 6 220 18 226 L172 226 C184 220 188 180 188 0" fill="none" stroke="#005DC4" stroke-width="3"/></svg>' +
+      '<div class="label">' + b.label + '</div>';
+    $("buckets").appendChild(el);
+    return el;
+  });
+
+  // ---------- Scaling ----------
+  function fit() {
+    const s = Math.min(1, frame.clientWidth / STAGE_W);
+    stage.style.transform = "scale(" + s + ")";
+    frame.style.height = (STAGE_H * s + 4) + "px";
+  }
+  window.addEventListener("resize", fit);
+  fit();
+
+  // ---------- State ----------
+  let queue, placed, active, phase, acc, last, soft, wrong, misses, startTime, feedbackTimer;
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function reset() {
+    stage.querySelectorAll(".block").forEach(el => el.remove());
+    queue = shuffle(IDEAS.map((_, i) => i));
+    placed = { robert: 0, captains: 0, neal: 0, jenny: 0 };
+    active = null; acc = 0; soft = false; wrong = 0; misses = 0;
+    $("sorted").textContent = "0";
+    setFeedback("", "");
+    renderQueue();
+  }
+
+  function sortedCount() { return Object.values(placed).reduce((a, b) => a + b, 0); }
+  function interval() {           // falls faster as more ideas are sorted
+    const n = sortedCount();
+    return Math.max(170, 440 - n * 25);
+  }
+
+  function renderQueue() {
+    queueEl.innerHTML = "";
+    queue.forEach((idx, i) => {
+      const q = document.createElement("div");
+      q.className = "qblock" + (i === 0 && phase === "playing" ? " next" : "");
+      q.textContent = IDEAS[idx].t;
+      queueEl.appendChild(q);
+    });
+  }
+
+  function setFeedback(text, cls) {
+    clearTimeout(feedbackTimer);
+    feedbackEl.textContent = text;
+    feedbackEl.className = "feedback " + (cls || "");
+    if (text) feedbackTimer = setTimeout(() => { feedbackEl.textContent = ""; }, 2600);
+  }
+
+  // ---------- Spawning and moving ----------
+  function spawn() {
+    if (!queue.length) return;
+    const idx = queue.shift();
+    renderQueue();
+    const el = document.createElement("div");
+    el.className = "block active";
+    el.textContent = IDEAS[idx].t;
+    stage.appendChild(el);
+    active = { idx, k: Math.floor(Math.random() * (MAX_K + 1)), y: SPAWN_Y, el };
+    acc = 0;
+    draw();
+  }
+
+  function draw() {
+    if (!active) return;
+    active.el.style.left = (X0 + active.k * STEP_X) + "px";
+    active.el.style.top = active.y + "px";
+  }
+
+  function move(dir) {
+    if (phase !== "playing" || !active || active.busy) return;
+    active.k = Math.max(0, Math.min(MAX_K, active.k + dir));
+    draw();
+  }
+
+  function fall() {
+    if (!active || active.busy) return;
+    active.y += STEP_Y;
+    if (active.y + BLOCK_H >= RIM_Y) { active.y = RIM_Y - BLOCK_H; draw(); land(); }
+    else draw();
+  }
+
+  function hardDrop() {
+    if (phase !== "playing" || !active || active.busy) return;
+    active.y = RIM_Y - BLOCK_H; draw(); land();
+  }
+
+  // ---------- Landing ----------
+  function land() {
+    const a = active; a.busy = true;
+    const cx = X0 + a.k * STEP_X + BLOCK_W / 2;
+    const bi = BUCKET_X.findIndex(x => cx >= x && cx <= x + BUCKET_W);
+    const idea = IDEAS[a.idx];
+
+    if (bi === -1) {
+      misses++;
+      setFeedback("That idea missed every bucket. It's back in the waiting room.", "bad");
+      bounce(a, null);
+      return;
+    }
+    const bucket = BUCKETS[bi];
+    if (bucket.id === idea.b) {
+      const slot = placed[bucket.id]++;
+      a.el.classList.remove("active");
+      a.el.classList.add("anim", "placed");
+      a.el.style.left = (BUCKET_X[bi] + 6) + "px";
+      a.el.style.top = SLOT_Y[slot] + "px";
+      flash(bi, "flash-good");
+      setFeedback("Yes, that was in " + bucket.name + " mind.", "good");
+      $("sorted").textContent = sortedCount();
+      active = null;
+      if (sortedCount() === IDEAS.length) { setTimeout(finish, 700); }
+      else setTimeout(() => { if (phase === "playing") spawn(); else pendingSpawn = true; }, 500);
+    } else {
+      wrong++;
+      flash(bi, "flash-bad");
+      setFeedback("That wasn't in " + bucket.name + " mind. Back to the waiting room.", "bad");
+      bounce(a, bi);
+    }
+  }
+
+  let pendingSpawn = false;
+
+  function bounce(a) {
+    a.el.classList.remove("active");
+    a.el.classList.add("shake");
+    setTimeout(() => {
+      a.el.classList.remove("shake");
+      a.el.classList.add("anim");
+      a.el.style.left = WAIT_X + "px";
+      a.el.style.top = WAIT_Y + "px";
+      a.el.style.opacity = "0";
+      a.el.style.transform = "scale(0.8)";
+      setTimeout(() => {
+        a.el.remove();
+        queue.push(a.idx);
+        active = null;
+        renderQueue();
+        if (phase === "playing") spawn(); else pendingSpawn = true;
+      }, 480);
+    }, 320);
+  }
+
+  function flash(bi, cls) {
+    bucketEls[bi].classList.add(cls);
+    setTimeout(() => bucketEls[bi].classList.remove(cls), 600);
+  }
+
+  // ---------- Game loop ----------
+  function loop(t) {
+    if (last == null) last = t;
+    const dt = Math.min(100, t - last); last = t;
+    if (phase === "playing" && active && !active.busy) {
+      acc += dt;
+      const iv = soft ? 35 : interval();
+      while (acc >= iv && active && !active.busy) { acc -= iv; fall(); }
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- Flow ----------
+  function start() {
+    reset();
+    phase = "playing";
+    startTime = Date.now();
+    $("intro").classList.add("hidden");
+    $("doneOv").classList.add("hidden");
+    spawn();
+    stage.focus && stage.focus();
+  }
+
+  function togglePause() {
+    if (phase === "playing") {
+      phase = "paused"; $("pauseOv").classList.remove("hidden"); $("pauseBtn").textContent = "Resume";
+      $("resumeBtn").focus();
+    } else if (phase === "paused") {
+      phase = "playing"; $("pauseOv").classList.add("hidden"); $("pauseBtn").textContent = "Pause";
+      last = null;
+      if (pendingSpawn && !active) { pendingSpawn = false; spawn(); }
+    }
+  }
+
+  function finish() {
+    phase = "done";
+    const secs = Math.round((Date.now() - startTime) / 1000);
+    const m = Math.floor(secs / 60), s = secs % 60;
+    const time = (m ? m + " min " : "") + s + " s";
+    const tries = wrong + misses;
+    $("stats").textContent = "Time: " + time + ". " +
+      (tries === 0 ? "Every idea went straight to the right mind."
+                   : "Ideas sent back to the waiting room: " + tries + ".");
+    $("doneOv").classList.remove("hidden");
+    $("againBtn").focus();
+  }
+
+  // ---------- Input ----------
+  window.addEventListener("keydown", e => {
+    const k = e.key;
+    if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " "].includes(k)) e.preventDefault();
+    if (k === "p" || k === "P" || k === "Escape") { togglePause(); return; }
+    if (phase !== "playing") return;
+    if (k === "ArrowLeft" || k === "a" || k === "A") move(-1);
+    else if (k === "ArrowRight" || k === "d" || k === "D") move(1);
+    else if (k === "ArrowDown" || k === "s" || k === "S") soft = true;
+    else if (k === " ") hardDrop();
+  });
+  window.addEventListener("keyup", e => {
+    if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") soft = false;
+  });
+
+  // Hold-to-repeat for on-screen buttons
+  function holdButton(btn, onPress, onRelease, repeat) {
+    let timer = null;
+    const down = e => {
+      e.preventDefault();
+      onPress();
+      if (repeat) timer = setInterval(onPress, 110);
+    };
+    const up = () => { clearInterval(timer); timer = null; if (onRelease) onRelease(); };
+    btn.addEventListener("pointerdown", down);
+    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => btn.addEventListener(ev, up));
+    btn.addEventListener("keydown", e => { if (e.key === "Enter") onPress(); });
+  }
+  holdButton($("leftBtn"), () => move(-1), null, true);
+  holdButton($("rightBtn"), () => move(1), null, true);
+  holdButton($("downBtn"), () => { soft = true; }, () => { soft = false; }, false);
+  $("dropBtn").addEventListener("click", hardDrop);
+  $("pauseBtn").addEventListener("click", togglePause);
+  $("resumeBtn").addEventListener("click", togglePause);
+  $("startBtn").addEventListener("click", start);
+  $("againBtn").addEventListener("click", start);
+
+  // Pause automatically if the learner switches tabs
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && phase === "playing") togglePause();
+  });
+
+  phase = "intro";
+  reset();
+})();
+</script>
+</body>
+</html>
